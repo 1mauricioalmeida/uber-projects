@@ -77,30 +77,53 @@
     }
   }
 
+  function getSelectedMusicProfile() {
+    const key = state.preferences.music;
+    if (!key) return null;
+    return config.musicProfiles?.[key] || { label: key, spotifyPlaylistUrl: '' };
+  }
+
   function storeSession() {
-    const data = { updatedAt: new Date().toISOString(), preferences: state.preferences, feedback: state.feedback };
+    const data = {
+      updatedAt: new Date().toISOString(),
+      preferences: state.preferences,
+      feedback: state.feedback,
+      selectedMusicProfile: getSelectedMusicProfile()
+    };
     sessionStorage.setItem('passenger-experience-session', JSON.stringify(data));
+  }
+
+  function setSingleSelection(container, selectedButton) {
+    container.querySelectorAll('button').forEach(item => {
+      const selected = item === selectedButton;
+      item.classList.toggle('selected', selected);
+      item.setAttribute('aria-pressed', selected ? 'true' : 'false');
+    });
   }
 
   function setupChoices() {
     $$('.choice-group').forEach(group => {
       const key = group.dataset.group;
       group.querySelectorAll('.choice').forEach(button => {
+        button.setAttribute('aria-pressed', 'false');
         button.addEventListener('click', () => {
-          group.querySelectorAll('.choice').forEach(item => item.classList.remove('selected'));
-          button.classList.add('selected');
+          setSingleSelection(group, button);
           state.preferences[key] = button.dataset.value;
+          storeSession();
         });
       });
     });
   }
 
   function setupRating() {
-    $$('.rating button').forEach(button => button.addEventListener('click', () => {
-      $$('.rating button').forEach(item => item.classList.remove('selected'));
-      button.classList.add('selected');
-      state.feedback.rating = Number(button.dataset.rating);
-    }));
+    $$('.rating button').forEach(button => {
+      button.setAttribute('aria-pressed', 'false');
+      button.addEventListener('click', () => {
+        setSingleSelection($('.rating'), button);
+        state.feedback.rating = Number(button.dataset.rating);
+        storeSession();
+      });
+    });
   }
 
   function setupWhatsApp() {
@@ -130,6 +153,7 @@
     state.preferences = { temperature: null, music: null, interaction: null, note: '' };
     state.feedback = { rating: null, note: '' };
     $$('.selected').forEach(el => el.classList.remove('selected'));
+    $$('[aria-pressed="true"]').forEach(el => el.setAttribute('aria-pressed', 'false'));
     $('#preference-note').value = '';
     $('#feedback-note').value = '';
     sessionStorage.removeItem('passenger-experience-session');
