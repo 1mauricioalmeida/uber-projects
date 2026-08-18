@@ -3,6 +3,11 @@ window.PASSENGER_EXPERIENCE_CONFIG = {
   whatsappMessage: "Olá! Entrei em contato pela experiência de bordo.",
   brandInitial: "M",
 
+  backend: {
+    enabled: true,
+    submitUrl: "https://vxoocvpcdxobintflwbi.supabase.co/functions/v1/submit-passenger-experience"
+  },
+
   // Perfis musicais escolhidos pelo passageiro. Cada perfil poderá apontar
   // para uma playlist curada pelo motorista sem alterar a interface.
   musicProfiles: {
