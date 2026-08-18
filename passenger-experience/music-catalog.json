@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "profiles": [
+    {
+      "id": "instrumental",
+      "label_pt": "Instrumental suave",
+      "intent": "calma, foco e neutralidade",
+      "target_energy": "low",
+      "examples_of_style": ["piano", "acoustic instrumental", "ambient", "clean lo-fi"],
+      "explicit_content": false,
+      "spotify_playlist_url": ""
+    },
+    {
+      "id": "mpb",
+      "label_pt": "MPB tranquila",
+      "intent": "acolhimento e identidade brasileira com baixa intensidade",
+      "target_energy": "low-medium",
+      "examples_of_style": ["MPB acústica", "bossa nova", "voz e violão"],
+      "explicit_content": false,
+      "spotify_playlist_url": ""
+    },
+    {
+      "id": "pop",
+      "label_pt": "Pop leve",
+      "intent": "familiaridade e energia moderada sem dominar o ambiente",
+      "target_energy": "medium",
+      "examples_of_style": ["soft pop", "acoustic pop", "easy listening"],
+      "explicit_content": false,
+      "spotify_playlist_url": ""
+    },
+    {
+      "id": "silence",
+      "label_pt": "Prefiro silêncio",
+      "intent": "nenhuma reprodução musical",
+      "target_energy": "none",
+      "examples_of_style": [],
+      "explicit_content": false,
+      "spotify_playlist_url": ""
+    }
+  ]
+}
