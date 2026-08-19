@@ -9,10 +9,8 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
-import android.text.InputType
 import android.view.ViewGroup
 import android.widget.Button
-import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.Switch
@@ -27,6 +25,7 @@ class MainActivity : Activity() {
     private lateinit var readerStatus: TextView
     private lateinit var offerStatus: TextView
     private lateinit var metricsStatus: TextView
+    private lateinit var costStatus: TextView
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -38,6 +37,7 @@ class MainActivity : Activity() {
         super.onResume()
         refreshStatus()
         refreshReaderDiagnostics()
+        refreshCostStatus()
     }
 
     private fun buildUi(): ScrollView {
@@ -54,7 +54,7 @@ class MainActivity : Activity() {
             setTextColor(Color.rgb(23, 41, 56))
         })
         root.addView(TextView(this).apply {
-            text = "Painel do motorista • inteligência operacional v0.2"
+            text = "Painel do motorista • inteligência operacional v0.2.1"
             textSize = 15f
             setTextColor(Color.DKGRAY)
             setPadding(0, dp(4), 0, dp(18))
@@ -64,35 +64,25 @@ class MainActivity : Activity() {
         readerStatus = infoCard()
         root.addView(readerStatus, fullWidth())
 
-        root.addView(actionButton("Ativar / gerenciar leitura do Uber Driver") {
+        root.addView(actionButton("1. Permitir configurações restritas") {
+            startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName")))
+        })
+        root.addView(actionButton("2. Ativar / gerenciar leitura do Uber Driver") {
             runCatching { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
         })
-
+        root.addView(TextView(this).apply {
+            text = "Em APK instalado fora da Play Store, o Android pode exigir: Informações do app → menu ⋮ → Permitir configurações restritas. Depois volte e habilite o leitor em Acessibilidade."
+            textSize = 13f
+            setTextColor(Color.GRAY)
+            setPadding(0, dp(8), 0, dp(4))
+        })
         root.addView(settingSwitch("Notificar quando uma oferta for interpretada", KEY_OFFER_NOTIFICATION, true))
 
-        root.addView(TextView(this).apply {
-            text = "Custo estimado por km (opcional)"
-            textSize = 15f
-            setTextColor(Color.DKGRAY)
-            setPadding(0, dp(12), 0, dp(4))
-        })
-        val costInput = EditText(this).apply {
-            hint = "Ex.: 1,55"
-            inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
-            setText(prefs.getString(KEY_COST_PER_KM, ""))
-            textSize = 16f
-            setPadding(dp(12), dp(10), dp(12), dp(10))
-            setBackgroundColor(Color.WHITE)
-        }
-        root.addView(costInput, fullWidth())
-        root.addView(actionButton("Salvar custo por km") {
-            val normalized = costInput.text.toString().trim().replace(",", ".")
-            val value = normalized.toDoubleOrNull()
-            if (value != null && value >= 0.0) {
-                prefs.edit().putString(KEY_COST_PER_KM, value.toString()).apply()
-                costInput.setText(value.toString().replace(".", ","))
-            }
-            refreshReaderDiagnostics()
+        root.addView(sectionTitle("Custos e metas"))
+        costStatus = infoCard()
+        root.addView(costStatus, fullWidth())
+        root.addView(actionButton("Configurar veículo, combustível, custos e meta") {
+            startActivity(Intent(this, CostProfileActivity::class.java))
         })
 
         root.addView(sectionTitle("Última oferta interpretada"))
@@ -108,7 +98,7 @@ class MainActivity : Activity() {
         })
 
         root.addView(TextView(this).apply {
-            text = "Nesta versão, o leitor observa somente o pacote do Uber Driver e extrai informações exibidas na interface. Ele não toca em botões, não aceita e não recusa corridas."
+            text = "O leitor observa somente o Uber Driver e extrai informações exibidas na interface. Ele não toca em botões, não aceita e não recusa corridas."
             textSize = 13f
             setTextColor(Color.GRAY)
             setPadding(0, dp(14), 0, dp(6))
@@ -123,27 +113,18 @@ class MainActivity : Activity() {
                 requestRuntimePermissions()
                 return@actionButton
             }
-            val intent = Intent(this, DriverSessionService::class.java)
-                .setAction(DriverSessionService.ACTION_START)
-            startForegroundService(intent)
+            startForegroundService(Intent(this, DriverSessionService::class.java).setAction(DriverSessionService.ACTION_START))
             prefs.edit().putBoolean(KEY_RIDE_ACTIVE, true).apply()
             refreshStatus()
         })
-
         root.addView(actionButton("Simular pedido do passageiro") {
-            val intent = Intent(this, DriverSessionService::class.java)
-                .setAction(DriverSessionService.ACTION_SIMULATE_REQUEST)
-            startService(intent)
+            startService(Intent(this, DriverSessionService::class.java).setAction(DriverSessionService.ACTION_SIMULATE_REQUEST))
         })
-
         root.addView(actionButton("Encerrar viagem") {
-            val intent = Intent(this, DriverSessionService::class.java)
-                .setAction(DriverSessionService.ACTION_STOP)
-            startService(intent)
+            startService(Intent(this, DriverSessionService::class.java).setAction(DriverSessionService.ACTION_STOP))
             prefs.edit().putBoolean(KEY_RIDE_ACTIVE, false).apply()
             refreshStatus()
         })
-
         root.addView(actionButton("Permitir botão flutuante sobre outros apps") {
             if (!Settings.canDrawOverlays(this)) {
                 startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
@@ -178,6 +159,17 @@ class MainActivity : Activity() {
 
         scroll.addView(root)
         return scroll
+    }
+
+    private fun refreshCostStatus() {
+        if (!::costStatus.isInitialized) return
+        val km = prefs.getString(KEY_COST_PER_KM, null)?.toDoubleOrNull()
+        val hour = prefs.getString(CostProfileActivity.KEY_COST_PER_HOUR, null)?.toDoubleOrNull()
+        costStatus.text = if (km == null) {
+            "Ainda não calculado. Configure rotina, veículo, combustível e custos."
+        } else {
+            "Custo estimado: R$ ${fmt(km)}/km" + if (hour != null) "\nCusto estimado: R$ ${fmt(hour)}/h" else ""
+        }
     }
 
     private fun infoCard(): TextView = TextView(this).apply {
@@ -223,22 +215,17 @@ class MainActivity : Activity() {
 
     private fun refreshReaderDiagnostics() {
         if (!::readerStatus.isInitialized) return
-
         val enabled = isReaderEnabled()
         val connected = prefs.getBoolean(KEY_READER_CONNECTED, false)
         readerStatus.text = when {
             enabled && connected -> "✅ Leitor ativo e conectado\nObservando somente: com.ubercab.driver"
             enabled -> "🟡 Leitor habilitado; aguardando conexão do Android"
-            else -> "⚪ Leitor desativado\nToque no botão abaixo e habilite ‘Leitor operacional do Uber Driver’."
+            else -> "⚪ Leitor desativado\nSe estiver bloqueado, primeiro permita as configurações restritas do app."
         }
 
         val detail = prefs.getString(KEY_LAST_OFFER_DETAIL, null)
         val lastAt = prefs.getLong(KEY_LAST_OFFER_AT, 0L)
-        offerStatus.text = if (detail.isNullOrBlank()) {
-            "Nenhuma oferta interpretada ainda."
-        } else {
-            "$detail\nLida em: ${formatTime(lastAt)}"
-        }
+        offerStatus.text = if (detail.isNullOrBlank()) "Nenhuma oferta interpretada ainda." else "$detail\nLida em: ${formatTime(lastAt)}"
 
         val screenEvents = prefs.getInt(KEY_SCREEN_EVENT_COUNT, 0)
         val offers = prefs.getInt(KEY_OFFER_COUNT, 0)
@@ -246,49 +233,29 @@ class MainActivity : Activity() {
         val state = prefs.getString(KEY_LAST_SCREEN_STATE, "—")
         val lastEventAt = prefs.getLong(KEY_LAST_SCREEN_EVENT_AT, 0L)
         val cost = prefs.getString(KEY_COST_PER_KM, "0")
-        metricsStatus.text = buildString {
-            append("Eventos relevantes: $screenEvents\n")
-            append("Ofertas únicas: $offers\n")
-            append("Telas parecidas com oferta não interpretadas: $misses\n")
-            append("Estado reconhecido: $state\n")
-            append("Último evento: ${if (lastEventAt > 0) formatTime(lastEventAt) else "—"}\n")
-            append("Custo/km configurado: R$ ${cost?.replace('.', ',') ?: "0"}")
-        }
+        metricsStatus.text = "Eventos relevantes: $screenEvents\nOfertas únicas: $offers\nTelas parecidas com oferta não interpretadas: $misses\nEstado reconhecido: $state\nÚltimo evento: ${if (lastEventAt > 0) formatTime(lastEventAt) else "—"}\nCusto/km aplicado: R$ ${cost?.replace('.', ',') ?: "0"}"
     }
 
     private fun isReaderEnabled(): Boolean {
-        val enabledServices = Settings.Secure.getString(
-            contentResolver,
-            Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
-        ).orEmpty()
+        val enabledServices = Settings.Secure.getString(contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES).orEmpty()
         val fullName = "$packageName/${UberScreenAccessibilityService::class.java.name}"
         val shortName = "$packageName/.UberScreenAccessibilityService"
-        return enabledServices.split(':').any {
-            it.equals(fullName, ignoreCase = true) || it.equals(shortName, ignoreCase = true)
-        }
+        return enabledServices.split(':').any { it.equals(fullName, true) || it.equals(shortName, true) }
     }
 
-    private fun formatTime(timestamp: Long): String =
-        SimpleDateFormat("dd/MM HH:mm:ss", Locale("pt", "BR")).format(Date(timestamp))
+    private fun formatTime(timestamp: Long): String = SimpleDateFormat("dd/MM HH:mm:ss", Locale("pt", "BR")).format(Date(timestamp))
+    private fun fmt(value: Double): String = String.format(Locale("pt", "BR"), "%.2f", value)
 
     private fun requestRuntimePermissions() {
         val missing = mutableListOf<String>()
         if (!hasLocationPermission()) missing += Manifest.permission.ACCESS_FINE_LOCATION
-        if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
-            missing += Manifest.permission.POST_NOTIFICATIONS
-        }
+        if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) missing += Manifest.permission.POST_NOTIFICATIONS
         if (missing.isNotEmpty()) requestPermissions(missing.toTypedArray(), 1001)
     }
 
-    private fun hasLocationPermission(): Boolean =
-        checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
-            checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+    private fun hasLocationPermission(): Boolean = checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED || checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
 
-    private fun fullWidth(top: Int = 0) = LinearLayout.LayoutParams(
-        ViewGroup.LayoutParams.MATCH_PARENT,
-        ViewGroup.LayoutParams.WRAP_CONTENT
-    ).apply { topMargin = dp(top) }
-
+    private fun fullWidth(top: Int = 0) = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(top) }
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
 
     companion object {
@@ -305,7 +272,6 @@ class MainActivity : Activity() {
         const val KEY_LAST_LNG = "last_lng"
         const val KEY_LAST_ACCURACY = "last_accuracy"
         const val KEY_LAST_ADDRESS = "last_address"
-
         const val KEY_READER_CONNECTED = "reader_connected"
         const val KEY_OFFER_NOTIFICATION = "offer_notification"
         const val KEY_COST_PER_KM = "cost_per_km"
