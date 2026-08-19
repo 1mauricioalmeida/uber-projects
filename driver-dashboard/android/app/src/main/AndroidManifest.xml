@@ -11,7 +11,7 @@
 
     <application
         android:allowBackup="false"
-        android:label="Hospitalidade a Bordo"
+        android:label="@string/app_name"
         android:supportsRtl="true"
         android:theme="@android:style/Theme.Material.Light.NoActionBar">
 
@@ -28,5 +28,18 @@
             android:name=".DriverSessionService"
             android:exported="false"
             android:foregroundServiceType="location" />
+
+        <service
+            android:name=".UberScreenAccessibilityService"
+            android:label="@string/accessibility_service_label"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/accessibility_service_config" />
+        </service>
     </application>
 </manifest>

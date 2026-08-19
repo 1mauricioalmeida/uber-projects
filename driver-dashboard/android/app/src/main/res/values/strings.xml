@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Hospitalidade a Bordo</string>
+    <string name="accessibility_service_label">Leitor operacional do Uber Driver</string>
+    <string name="accessibility_service_description">Observa somente a interface do Uber Driver para identificar ofertas e eventos operacionais exibidos na tela. Não toca, aceita ou recusa corridas e não executa ações no app da Uber.</string>
+</resources>
