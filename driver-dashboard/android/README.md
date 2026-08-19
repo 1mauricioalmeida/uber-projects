@@ -20,6 +20,17 @@ Este MVP testa, de forma isolada, os pontos de maior risco técnico no dispositi
 - contrato para automação musical;
 - simulação local de uma solicitação do passageiro.
 
+## Botão flutuante
+
+O overlay do motorista deve permanecer útil sem ocupar espaço excessivo da navegação:
+
+- arrastar com um dedo para reposicionar livremente pela tela;
+- gesto de pinça com dois dedos para reduzir ou ampliar;
+- limite entre 32 dp e 72 dp para evitar que desapareça ou cubra área demais;
+- toque simples abre ou fecha o menu rápido;
+- posição e tamanho são persistidos e restaurados na próxima sessão;
+- o menu rápido abre preferencialmente no lado oposto ao botão, para reduzir sobreposição com Uber Driver e Waze.
+
 ## Segurança operacional
 
 O app não deve exigir leitura ou toque enquanto o veículo estiver em movimento. O botão flutuante é um atalho de consulta para quando for seguro usar a tela. A música deve ser automatizada; solicitações manuais podem usar voz e/ou notificação persistente conforme configuração.
@@ -31,6 +42,12 @@ O app não deve exigir leitura ou toque enquanto o veículo estiver em movimento
 ## Localização
 
 A localização é coletada somente no app do motorista. O MVP mantém a última posição em memória e registra localmente os pontos de início e fim, com precisão. Não há rastreamento do aparelho do passageiro.
+
+## Acessibilidade e comunicação
+
+O produto deve permitir que uma pessoa comunique necessidades sem precisar falar e sem precisar declarar uma deficiência ou diagnóstico. As escolhas devem descrever necessidades operacionais — silêncio, forma de comunicação, temperatura, som e ajuda — e não criar perfis sensíveis de passageiros.
+
+A pesquisa e os requisitos derivados estão registrados em `docs/research/2026-08-rider-needs-accessibility.md`.
 
 ## Build
 
@@ -44,4 +61,5 @@ O workflow `Build driver Android MVP` gera um APK de debug como artefato do GitH
 4. recebimento em tempo real dos pedidos reais;
 5. persistência de início/fim e endereço no Supabase;
 6. adaptador de música automática;
-7. conciliação posterior com dados do Uber Driver.
+7. conciliação posterior com dados do Uber Driver;
+8. evolução do formulário do passageiro para comunicação sem fala e necessidades sensoriais, sem exigir diagnóstico.

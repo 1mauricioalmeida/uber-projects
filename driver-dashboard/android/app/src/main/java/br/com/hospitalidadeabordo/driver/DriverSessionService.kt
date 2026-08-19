@@ -6,7 +6,6 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
-import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Color
@@ -21,12 +20,16 @@ import android.os.IBinder
 import android.provider.Settings
 import android.speech.tts.TextToSpeech
 import android.view.Gravity
-import android.view.View
+import android.view.MotionEvent
+import android.view.ScaleGestureDetector
+import android.view.ViewConfiguration
 import android.view.WindowManager
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.TextView
 import java.util.Locale
+import kotlin.math.abs
+import kotlin.math.roundToInt
 
 class DriverSessionService : Service(), LocationListener, TextToSpeech.OnInitListener {
     private lateinit var prefs: android.content.SharedPreferences
@@ -36,6 +39,7 @@ class DriverSessionService : Service(), LocationListener, TextToSpeech.OnInitLis
     private var tts: TextToSpeech? = null
     private var lastLocation: Location? = null
     private var bubbleView: TextView? = null
+    private var bubbleParams: WindowManager.LayoutParams? = null
     private var quickPanel: LinearLayout? = null
     private var windowManager: WindowManager? = null
     private var lastGeocodeAt = 0L
@@ -282,9 +286,28 @@ class DriverSessionService : Service(), LocationListener, TextToSpeech.OnInitLis
         if (Build.VERSION.SDK_INT < 23 || !Settings.canDrawOverlays(this) || bubbleView != null) return
         val wm = windowManager ?: return
 
+        val display = resources.displayMetrics
+        val savedSizeDp = prefs.getInt(KEY_BUBBLE_SIZE_DP, DEFAULT_BUBBLE_SIZE_DP)
+            .coerceIn(MIN_BUBBLE_SIZE_DP, MAX_BUBBLE_SIZE_DP)
+        val sizePx = dp(savedSizeDp)
+
+        val params = WindowManager.LayoutParams(
+            sizePx,
+            sizePx,
+            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
+            PixelFormat.TRANSLUCENT
+        ).apply {
+            gravity = Gravity.TOP or Gravity.START
+            x = prefs.getInt(KEY_BUBBLE_X, display.widthPixels - sizePx - dp(8))
+                .coerceIn(0, (display.widthPixels - sizePx).coerceAtLeast(0))
+            y = prefs.getInt(KEY_BUBBLE_Y, ((display.heightPixels - sizePx) / 2).coerceAtLeast(0))
+                .coerceIn(0, (display.heightPixels - sizePx).coerceAtLeast(0))
+        }
+
         val bubble = TextView(this).apply {
             text = "H"
-            textSize = 20f
+            textSize = bubbleTextSizeSp(sizePx)
             gravity = Gravity.CENTER
             setTextColor(Color.WHITE)
             background = GradientDrawable().apply {
@@ -292,20 +315,141 @@ class DriverSessionService : Service(), LocationListener, TextToSpeech.OnInitLis
                 setColor(Color.rgb(23, 41, 56))
                 setStroke(dp(2), Color.rgb(198, 164, 99))
             }
-            setOnClickListener { toggleQuickPanel() }
         }
-        val params = WindowManager.LayoutParams(
-            dp(54),
-            dp(54),
-            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
-            PixelFormat.TRANSLUCENT
-        ).apply {
-            gravity = Gravity.END or Gravity.CENTER_VERTICAL
-            x = dp(8)
+
+        val scaleDetector = ScaleGestureDetector(
+            this,
+            object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
+                override fun onScale(detector: ScaleGestureDetector): Boolean {
+                    removeQuickPanel()
+                    val minSize = dp(MIN_BUBBLE_SIZE_DP)
+                    val maxSize = dp(MAX_BUBBLE_SIZE_DP)
+                    val nextSize = (params.width * detector.scaleFactor)
+                        .roundToInt()
+                        .coerceIn(minSize, maxSize)
+
+                    if (nextSize == params.width) return true
+
+                    val focusOnScreenX = params.x + detector.focusX
+                    val focusOnScreenY = params.y + detector.focusY
+                    params.width = nextSize
+                    params.height = nextSize
+                    params.x = (focusOnScreenX - detector.focusX).roundToInt()
+                    params.y = (focusOnScreenY - detector.focusY).roundToInt()
+                    clampBubbleToScreen(params)
+
+                    bubble.textSize = bubbleTextSizeSp(nextSize)
+                    safelyUpdateOverlay(bubble, params)
+                    saveBubbleGeometry(params)
+                    return true
+                }
+            }
+        )
+
+        val touchSlop = ViewConfiguration.get(this).scaledTouchSlop
+        var downRawX = 0f
+        var downRawY = 0f
+        var downWindowX = 0
+        var downWindowY = 0
+        var moved = false
+        var scaled = false
+
+        bubble.setOnTouchListener { _, event ->
+            scaleDetector.onTouchEvent(event)
+
+            when (event.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    downRawX = event.rawX
+                    downRawY = event.rawY
+                    downWindowX = params.x
+                    downWindowY = params.y
+                    moved = false
+                    scaled = false
+                    true
+                }
+
+                MotionEvent.ACTION_POINTER_DOWN -> {
+                    scaled = true
+                    removeQuickPanel()
+                    true
+                }
+
+                MotionEvent.ACTION_MOVE -> {
+                    if (event.pointerCount > 1 || scaleDetector.isInProgress) {
+                        scaled = true
+                        true
+                    } else {
+                        val dx = event.rawX - downRawX
+                        val dy = event.rawY - downRawY
+                        if (!moved && (abs(dx) > touchSlop || abs(dy) > touchSlop)) {
+                            moved = true
+                            removeQuickPanel()
+                        }
+                        if (moved) {
+                            params.x = downWindowX + dx.roundToInt()
+                            params.y = downWindowY + dy.roundToInt()
+                            clampBubbleToScreen(params)
+                            safelyUpdateOverlay(bubble, params)
+                        }
+                        true
+                    }
+                }
+
+                MotionEvent.ACTION_POINTER_UP -> {
+                    scaled = true
+                    saveBubbleGeometry(params)
+                    true
+                }
+
+                MotionEvent.ACTION_UP -> {
+                    saveBubbleGeometry(params)
+                    if (!moved && !scaled && !scaleDetector.isInProgress) {
+                        toggleQuickPanel()
+                    }
+                    true
+                }
+
+                MotionEvent.ACTION_CANCEL -> {
+                    saveBubbleGeometry(params)
+                    true
+                }
+
+                else -> true
+            }
         }
+
         wm.addView(bubble, params)
         bubbleView = bubble
+        bubbleParams = params
+    }
+
+    private fun clampBubbleToScreen(params: WindowManager.LayoutParams) {
+        val display = resources.displayMetrics
+        params.x = params.x.coerceIn(0, (display.widthPixels - params.width).coerceAtLeast(0))
+        params.y = params.y.coerceIn(0, (display.heightPixels - params.height).coerceAtLeast(0))
+    }
+
+    private fun saveBubbleGeometry(params: WindowManager.LayoutParams) {
+        val density = resources.displayMetrics.density
+        val sizeDp = (params.width / density).roundToInt()
+            .coerceIn(MIN_BUBBLE_SIZE_DP, MAX_BUBBLE_SIZE_DP)
+        prefs.edit()
+            .putInt(KEY_BUBBLE_X, params.x)
+            .putInt(KEY_BUBBLE_Y, params.y)
+            .putInt(KEY_BUBBLE_SIZE_DP, sizeDp)
+            .apply()
+    }
+
+    private fun bubbleTextSizeSp(sizePx: Int): Float {
+        val base = dp(DEFAULT_BUBBLE_SIZE_DP).coerceAtLeast(1)
+        return (20f * sizePx / base.toFloat()).coerceIn(12f, 26f)
+    }
+
+    private fun safelyUpdateOverlay(view: TextView, params: WindowManager.LayoutParams) {
+        try {
+            windowManager?.updateViewLayout(view, params)
+        } catch (_: Exception) {
+        }
     }
 
     private fun toggleQuickPanel() {
@@ -314,6 +458,10 @@ class DriverSessionService : Service(), LocationListener, TextToSpeech.OnInitLis
             return
         }
         val wm = windowManager ?: return
+        val bubble = bubbleParams ?: return
+        val panelWidth = dp(260)
+        val display = resources.displayMetrics
+
         val panel = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(14), dp(12), dp(14), dp(12))
@@ -343,15 +491,24 @@ class DriverSessionService : Service(), LocationListener, TextToSpeech.OnInitLis
             setOnClickListener { stopRideSession() }
         })
 
+        val bubbleCenter = bubble.x + bubble.width / 2
+        val preferLeft = bubbleCenter > display.widthPixels / 2
+        val desiredX = if (preferLeft) {
+            bubble.x - panelWidth - dp(12)
+        } else {
+            bubble.x + bubble.width + dp(12)
+        }
+
         val params = WindowManager.LayoutParams(
-            dp(260),
+            panelWidth,
             WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
             PixelFormat.TRANSLUCENT
         ).apply {
-            gravity = Gravity.END or Gravity.CENTER_VERTICAL
-            x = dp(72)
+            gravity = Gravity.TOP or Gravity.START
+            x = desiredX.coerceIn(0, (display.widthPixels - panelWidth).coerceAtLeast(0))
+            y = bubble.y.coerceIn(0, (display.heightPixels - dp(220)).coerceAtLeast(0))
         }
         wm.addView(panel, params)
         quickPanel = panel
@@ -364,7 +521,10 @@ class DriverSessionService : Service(), LocationListener, TextToSpeech.OnInitLis
 
     private fun removeQuickPanel() {
         quickPanel?.let {
-            try { windowManager?.removeView(it) } catch (_: Exception) { }
+            try {
+                windowManager?.removeView(it)
+            } catch (_: Exception) {
+            }
         }
         quickPanel = null
     }
@@ -372,9 +532,13 @@ class DriverSessionService : Service(), LocationListener, TextToSpeech.OnInitLis
     private fun removeOverlay() {
         removeQuickPanel()
         bubbleView?.let {
-            try { windowManager?.removeView(it) } catch (_: Exception) { }
+            try {
+                windowManager?.removeView(it)
+            } catch (_: Exception) {
+            }
         }
         bubbleView = null
+        bubbleParams = null
     }
 
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
@@ -390,6 +554,13 @@ class DriverSessionService : Service(), LocationListener, TextToSpeech.OnInitLis
         private const val NOTIFICATION_ACTIVE = 100
         private const val NOTIFICATION_REQUEST = 101
         private const val NOTIFICATION_URGENT = 102
+
+        private const val KEY_BUBBLE_X = "overlay_bubble_x"
+        private const val KEY_BUBBLE_Y = "overlay_bubble_y"
+        private const val KEY_BUBBLE_SIZE_DP = "overlay_bubble_size_dp"
+        private const val DEFAULT_BUBBLE_SIZE_DP = 54
+        private const val MIN_BUBBLE_SIZE_DP = 32
+        private const val MAX_BUBBLE_SIZE_DP = 72
 
         const val KEY_STARTED_AT = "ride_started_at"
         const val KEY_ENDED_AT = "ride_ended_at"
