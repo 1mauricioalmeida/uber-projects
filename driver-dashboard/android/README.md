@@ -4,6 +4,23 @@
 
 Executar as funções que precisam continuar confiáveis enquanto Uber Driver e Waze estão em primeiro plano, sem exigir interação constante durante a condução.
 
+## Versão de teste v0.2
+
+A v0.2 adiciona um leitor operacional baseado em `AccessibilityService`, restrito ao pacote `com.ubercab.driver`.
+
+O leitor:
+- observa mudanças da interface do Uber Driver;
+- lê texto e descrições disponíveis na árvore de acessibilidade;
+- identifica telas de oferta;
+- tenta extrair categoria, valor, avaliação, selo verificado, adicional, tempo/distância até o embarque, tempo/distância da viagem e endereços;
+- calcula tempo e distância totais previstos, R$/km, R$/hora e R$/min;
+- usa custo por km configurado pelo motorista para estimar custo e lucro da oferta;
+- atribui uma confiança à interpretação;
+- mantém um histórico local estruturado de ofertas únicas;
+- não toca em botões, não aceita e não recusa corridas.
+
+O painel mostra contadores de eventos, ofertas reconhecidas e telas semelhantes a oferta que o parser não conseguiu interpretar. Esses dados servem para calibrar o leitor com telas reais antes de sincronizar a telemetria com o backend.
+
 ## Primeiro teste no tablet
 
 Este MVP testa, de forma isolada, os pontos de maior risco técnico no dispositivo real:
@@ -18,7 +35,8 @@ Este MVP testa, de forma isolada, os pontos de maior risco técnico no dispositi
 - menu rápido do botão flutuante;
 - perfis de aviso configuráveis;
 - contrato para automação musical;
-- simulação local de uma solicitação do passageiro.
+- simulação local de uma solicitação do passageiro;
+- leitura estruturada e passiva da interface do Uber Driver.
 
 ## Botão flutuante
 
@@ -34,6 +52,12 @@ O overlay do motorista deve permanecer útil sem ocupar espaço excessivo da nav
 ## Segurança operacional
 
 O app não deve exigir leitura ou toque enquanto o veículo estiver em movimento. O botão flutuante é um atalho de consulta para quando for seguro usar a tela. A música deve ser automatizada; solicitações manuais podem usar voz e/ou notificação persistente conforme configuração.
+
+A leitura do Uber Driver é observacional. O serviço declara `canPerformGestures=false` e não contém lógica de clique, aceite ou recusa de ofertas.
+
+## Privacidade do leitor
+
+A v0.2 não persiste a árvore bruta da tela. Ela grava somente campos estruturados reconhecidos na oferta e métricas técnicas do parser. Isso reduz a chance de armazenar conteúdo não necessário exibido pelo Uber Driver.
 
 ## Música
 
@@ -55,11 +79,13 @@ O workflow `Build driver Android MVP` gera um APK de debug como artefato do GitH
 
 ## Próximas integrações
 
-1. autenticação/pareamento seguro do tablet com o Supabase;
-2. criação e encerramento de `ride` no backend;
-3. vínculo automático do envio do passageiro com a viagem ativa;
-4. recebimento em tempo real dos pedidos reais;
-5. persistência de início/fim e endereço no Supabase;
-6. adaptador de música automática;
-7. conciliação posterior com dados do Uber Driver;
-8. evolução do formulário do passageiro para comunicação sem fala e necessidades sensoriais, sem exigir diagnóstico.
+1. validar o parser com ofertas reais no tablet e corrigir layouts não reconhecidos;
+2. autenticação/pareamento seguro do tablet com o Supabase;
+3. sincronizar ofertas e eventos operacionais estruturados com o backend;
+4. construir a máquina de estados oferta → embarque → viagem → resultado;
+5. criação e encerramento de `ride` no backend;
+6. recebimento em tempo real dos pedidos reais do passageiro;
+7. persistência de início/fim e endereço no Supabase;
+8. adaptador de música automática;
+9. custos reais e previsto × realizado;
+10. telemetria de condução e inteligência de performance.
